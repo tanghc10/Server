@@ -110,43 +110,94 @@ void CSessionSocket::OnReceive(int nErrorCode)
 }
 
 void CSessionSocket::OnLogoIN(char* buff, int nlen,char from_user[20]){
-	//CDatabase m_dataBase;  //数据库
-	//					   //连接数据库
-	//m_dataBase.Open(NULL,
-	//	false,
-	//	false,
-	//	_T("ODBC;server=127.0.0.1;DSN=My_odbc;UID=root;PWD=tanghuichuan1997")
-	//);
-	//if (!m_dataBase.IsOpen())
-	//{
-	//	AfxMessageBox(_T("数据库连接失败!"));
-	//	return;
-	//}
-	//CString from(from_user);
-	//CString str = _T("insert into socket.users values ('") + from + _T("', '123455', 3, '8888')");
-	//m_dataBase.ExecuteSQL(str);
-	//m_dataBase.Close();
+	CDatabase m_dataBase;  //数据库
+						   //连接数据库
+	m_dataBase.Open(NULL,
+		false,
+		false,
+		_T("ODBC;server=127.0.0.1;DSN=My_odbc;UID=root;PWD=tanghuichuan1997")
+	);
+	if (!m_dataBase.IsOpen())
+	{
+		AfxMessageBox(_T("数据库连接失败!"));
+		return;
+	}
+	CString from(from_user);
+	m_strName = from;
+	CString str = _T("SELECT * FROM socket.users WHERE name = '") + from + _T("'");
+	CRecordset *m_recordset;
+	m_recordset = new CRecordset(&m_dataBase);
+	m_recordset->Open(AFX_DB_USE_DEFAULT_TYPE, str);
+	long num = m_recordset->GetRecordCount();
+	if (num == 0) {
+		Answer_Login(0, from_user);
+		return;
+	}
+	CString tempStr;
+	LPCTSTR lpctStr = (LPCTSTR)_T("password");
+	m_recordset->GetFieldValue(lpctStr, tempStr);
+	m_recordset->Close();
+	m_dataBase.Close();
+	cJSON *json_root = NULL;
+	json_root = cJSON_Parse(buff);
+	char *name = cJSON_GetObjectItem(json_root, "username")->valuestring;
+	char *password = cJSON_GetObjectItem(json_root, "password")->valuestring;
+	CString Name(name);
+	CString Password(password);
+	if (tempStr.Compare(Password) != 0) {
+		Answer_Login(0, from_user);
+		return;
+	}
+	else {
+		Answer_Login(1, from_user);
+	}
 
 	//TODO:检查用户与密码是否对应
 	CTime time;
 	time = CTime::GetCurrentTime();  //获取现在时间
 	CString strTime = time.Format("%Y-%m-%d %H:%M:%S 用户：");
 
-	CString strTemp(buff);
-	strTime = strTime + strTemp + _T(" 登录\r\n");
+	strTime = strTime + from + _T(" 登录\r\n");
 	//记录日志
 	//将内容在NetChatServerDlg里的控件显示
 
 	CServerView* pView = (CServerView*)((CMainFrame*)AfxGetApp()->m_pMainWnd)->GetActiveView();
 	pView->m_listData.AddString(strTime);
-	pView->m_userList.AddString(strTemp);
-	m_strName = strTemp;
+	pView->m_userList.AddString(from);
 	//更新服务列表，这个是更新服务器端的在线名单 
 	//str1 返回的是所有用户字符串
 	CString str1 = this->Update_ServerLog();
 	//更新在线所有客服端，from_user 是为了不更新自己的在线列表，
 	//自己跟自己聊天没多大意思吧，其实更自己聊也问题不大，我只是为了学习，加了这么一个工程
 	this->UpDate_ClientUser(str1, from_user);
+}
+
+void CSessionSocket::Answer_Login(int flag, char *from_user) {
+	HEADER _head;
+	_head.type = MSG_LOGOIN;
+	_head.nContentLen = sizeof(char);
+	strcpy(_head.to_user, from_user);
+	strcpy(_head.from_user, "Server");
+	char Msg;
+	if (flag == 0) {
+		Msg = '0';
+	}
+	else {
+		Msg = '1';
+	}
+	CServerView* pView = (CServerView*)((CMainFrame*)AfxGetApp()->m_pMainWnd)->GetActiveView();
+	POSITION ps = pView->m_pSessionList->GetHeadPosition();  //取得，所有用户的队列
+	while (ps != NULL)
+	{
+		CSessionSocket* pTemp = (CSessionSocket*)pView->m_pSessionList->GetNext(ps);
+		//只发送2个人， 一个是发送聊天消息的人和接收聊天消息的人。
+		//如果，接收聊天消息的人是“群聊”那么就发送所有用户，实现群聊和一对一关键就在于此
+		if (pTemp->m_strName == _head.to_user)
+		{
+			pTemp->Send(&_head, sizeof(HEADER));  //先发送头部
+			pTemp->Send(&Msg, sizeof(char));	//然后发布内容
+		}
+	}
 }
 
 void CSessionSocket::UpDate_ClientUser(CString strUserInfo, char from_user[20]) {
