@@ -14,6 +14,7 @@ public:
 	void UpDate_ClientUser(CString strUserInfo, char from_user[20]);
 	void OnMSGTranslate(char* buff, int nlen, char to_user[20], char from_user[20]); //转发消息给其他用户
 	void OnUserRegist(HEADER head, char *buf);
+	void Answer_Login(int flag, char *from_user);
 	CString Update_ServerLog();
 private:
 	BOOL WChar2MByte(LPCWSTR srcBuff, LPSTR destBuff, int nlen);
