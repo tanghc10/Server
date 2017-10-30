@@ -11,6 +11,8 @@ const int MSG_SEND = 0x02;   //发送消息
 const int MSG_CLOSE = 0x03;  //退出
 const int MSG_UPDATE = 0x04; //更新信息
 const int MSG_REGIST = 0x05;	//注册用户
+const int MSG_GETQUE = 0x06;	//获取密保问题
+const int MSG_RESET = 0x07;		//重置密码
 
 #pragma pack(push,1)
 typedef struct tagHeader {
