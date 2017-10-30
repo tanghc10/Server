@@ -32,7 +32,8 @@ void CListenSocket::OnAccept(int nErrorCode)
 	CSessionSocket* pNewSocket = new CSessionSocket();
 
 	// 接受连接,得到会话socket,
-	if (Accept(*pNewSocket))
+	int len = sizeof(SOCKADDR);
+	if (Accept(*pNewSocket, (SOCKADDR *)&(pNewSocket->sockAddr), &len))
 	{
 		//为新得到的会话socket设置异步选择事件
 		pNewSocket->AsyncSelect(FD_READ | FD_CLOSE);

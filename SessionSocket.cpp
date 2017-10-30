@@ -24,7 +24,6 @@ CSessionSocket::~CSessionSocket()
 {
 }
 
-
 // CSessionSocket 成员函数
 
 //当客户关闭连接时的事件响应函数
@@ -261,7 +260,6 @@ CString CSessionSocket::Update_ServerLog() {
 		CSessionSocket *pTemp = (CSessionSocket *)pView->m_pSessionList->GetNext(ps);
 		strUserInfo += pTemp->m_strName + _T("#");	//用'#'来分割
 	}
-
 	return strUserInfo;
 }
 
@@ -377,6 +375,14 @@ void CSessionSocket::GetQuestion(HEADER head) {
 		return;
 	}
 	CString from(head.from_user);
+
+	CServerView* pView = (CServerView*)((CMainFrame*)AfxGetApp()->m_pMainWnd)->GetActiveView();
+	CTime time;
+	time = CTime::GetCurrentTime();  //获取现在时间
+	CString strTime = time.Format("%Y-%m-%d %H:%M:%S 用户：");
+	strTime = strTime + from + _T(" 获取密保问题\r\n");
+	pView->m_listData.AddString(strTime);
+
 	m_strName = from;
 	CString str = _T("SELECT * FROM socket.users WHERE name = '") + from + _T("'");
 	CRecordset *m_recordset;
@@ -407,7 +413,6 @@ void CSessionSocket::GetQuestion(HEADER head) {
 	strcpy(_head.to_user, head.from_user);
 	_head.nContentLen = strlen(data);
 
-	CServerView* pView = (CServerView*)((CMainFrame*)AfxGetApp()->m_pMainWnd)->GetActiveView();
 	POSITION ps = pView->m_pSessionList->GetHeadPosition();  //取得，所有用户的队列
 	while (ps != NULL)
 	{
@@ -466,6 +471,14 @@ void CSessionSocket::OnUserReset(HEADER head, char *buf) {
 	CString str1 = _T("update socket.users set password='")+ Password + _T("' where name='") + Name + _T("'");
 	m_dataBase.ExecuteSQL(str1);
 	Answer_Reset(1, head);
+	//TODO:检查用户与密码是否对应
+
+	CTime time;
+	time = CTime::GetCurrentTime();  //获取现在时间
+	CString strTime = time.Format("%Y-%m-%d %H:%M:%S 用户：");
+	strTime = strTime + Name + _T(" 修改密码\r\n");
+	pView->m_listData.AddString(strTime);
+
 	m_recordset->Close();
 	m_dataBase.Close();
 }
