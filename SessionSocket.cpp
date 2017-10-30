@@ -24,7 +24,6 @@ CSessionSocket::~CSessionSocket()
 {
 }
 
-
 // CSessionSocket 成员函数
 
 //当客户关闭连接时的事件响应函数
@@ -254,13 +253,44 @@ BOOL CSessionSocket::WChar2MByte(LPCWSTR srcBuff, LPSTR destBuff, int nlen)
 }
 
 CString CSessionSocket::Update_ServerLog() {
-	CString strUserInfo = _T("");
-	CServerView* pView = (CServerView*)((CMainFrame*)AfxGetApp()->m_pMainWnd)->GetActiveView();
-	POSITION ps = pView->m_pSessionList->GetHeadPosition();
-	while (ps != NULL) {
-		CSessionSocket *pTemp = (CSessionSocket *)pView->m_pSessionList->GetNext(ps);
-		strUserInfo += pTemp->m_strName + _T("#");	//用'#'来分割
+
+	CDatabase m_dataBase;  //数据库
+						   //连接数据库
+	m_dataBase.Open(NULL,
+		false,
+		false,
+		_T("ODBC;server=127.0.0.1;DSN=My_odbc;UID=root;PWD=tanghuichuan1997")
+	);
+	if (!m_dataBase.IsOpen())
+	{
+		AfxMessageBox(_T("数据库连接失败!"));
+		return _T("");
 	}
+	CRecordset *m_recordset;
+	m_recordset = new CRecordset(&m_dataBase);
+	CString str = _T("SELECT * FROM socket.users");
+	m_recordset->Open(AFX_DB_USE_DEFAULT_TYPE, str);
+	/*long num = m_recordset->GetRecordCount();
+	short cnt = m_recordset->GetODBCFieldCount();*/
+	m_recordset->MoveLast();
+	CString lastname;
+	LPCTSTR lpctStr = (LPCTSTR)_T("name");
+	m_recordset->GetFieldValue(lpctStr, lastname);
+	m_recordset->MoveFirst();
+	CString name("");
+	CString status("");
+	CString strUserInfo("");
+	while (name.Compare(lastname) != 0) {
+		LPCTSTR getName = (LPCTSTR)_T("name");
+		m_recordset->GetFieldValue(getName, name);
+		LPCTSTR getStatus = (LPCTSTR)_T("isOnline");
+		m_recordset->GetFieldValue(getStatus, status);
+		CString json = _T("{\"name\":\"") + name + _T("\",\"status\":\"") + status + _T("\"}");
+		strUserInfo = strUserInfo + json + _T("#");
+		m_recordset->MoveNext();
+	}
+	m_recordset->Close();
+	m_dataBase.Close();
 
 	return strUserInfo;
 }
@@ -377,6 +407,14 @@ void CSessionSocket::GetQuestion(HEADER head) {
 		return;
 	}
 	CString from(head.from_user);
+
+	CServerView* pView = (CServerView*)((CMainFrame*)AfxGetApp()->m_pMainWnd)->GetActiveView();
+	CTime time;
+	time = CTime::GetCurrentTime();  //获取现在时间
+	CString strTime = time.Format("%Y-%m-%d %H:%M:%S 用户：");
+	strTime = strTime + from + _T(" 获取密保问题\r\n");
+	pView->m_listData.AddString(strTime);
+
 	m_strName = from;
 	CString str = _T("SELECT * FROM socket.users WHERE name = '") + from + _T("'");
 	CRecordset *m_recordset;
@@ -407,7 +445,6 @@ void CSessionSocket::GetQuestion(HEADER head) {
 	strcpy(_head.to_user, head.from_user);
 	_head.nContentLen = strlen(data);
 
-	CServerView* pView = (CServerView*)((CMainFrame*)AfxGetApp()->m_pMainWnd)->GetActiveView();
 	POSITION ps = pView->m_pSessionList->GetHeadPosition();  //取得，所有用户的队列
 	while (ps != NULL)
 	{
@@ -466,6 +503,14 @@ void CSessionSocket::OnUserReset(HEADER head, char *buf) {
 	CString str1 = _T("update socket.users set password='")+ Password + _T("' where name='") + Name + _T("'");
 	m_dataBase.ExecuteSQL(str1);
 	Answer_Reset(1, head);
+	//TODO:检查用户与密码是否对应
+
+	CTime time;
+	time = CTime::GetCurrentTime();  //获取现在时间
+	CString strTime = time.Format("%Y-%m-%d %H:%M:%S 用户：");
+	strTime = strTime + Name + _T(" 修改密码\r\n");
+	pView->m_listData.AddString(strTime);
+
 	m_recordset->Close();
 	m_dataBase.Close();
 }
