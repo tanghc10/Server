@@ -179,20 +179,28 @@ void CSessionSocket::OnLogoIN(char* buff, int nlen,char from_user[20]){
 }
 
 void CSessionSocket::Answer_Login(int flag, char *from_user) {
+
+	CString str;
+	if (flag == 0) {
+		str = _T("{\"cmd\":0}");
+	}
+	else {
+		str = _T("{\"cmd\":1}");
+	}
+
+	int len = WideCharToMultiByte(CP_ACP, 0, str, -1, NULL, 0, NULL, NULL);
+	char *data = new char[len + 1];
+	WideCharToMultiByte(CP_ACP, 0, str, -1, data, len, NULL, NULL);
+
 	HEADER _head;
 	_head.type = MSG_LOGOIN;
-	_head.nContentLen = sizeof(char);
+	_head.nContentLen = len + 1;
 	memset(_head.to_user, 0, sizeof(_head.to_user));
 	strcpy(_head.to_user, from_user);
 	memset(_head.from_user, 0, sizeof(_head.from_user));
 	strcpy(_head.from_user, "Server");
-	char Msg;
-	if (flag == 0) {
-		Msg = '0';
-	}
-	else {
-		Msg = '1';
-	}
+
+
 	CServerView* pView = (CServerView*)((CMainFrame*)AfxGetApp()->m_pMainWnd)->GetActiveView();
 	POSITION ps = pView->m_pSessionList->GetHeadPosition();  //取得，所有用户的队列
 	while (ps != NULL)
@@ -203,7 +211,7 @@ void CSessionSocket::Answer_Login(int flag, char *from_user) {
 		if (pTemp->m_strName == _head.to_user)
 		{
 			pTemp->Send(&_head, sizeof(HEADER));  //先发送头部
-			pTemp->Send(&Msg, sizeof(char));	//然后发布内容
+			pTemp->Send(data, len + 1);	//然后发布内容
 		}
 	}
 }
@@ -257,7 +265,6 @@ CString CSessionSocket::Update_ServerLog() {
 	return strUserInfo;
 }
 
-//转发消息
 void CSessionSocket::OnMSGTranslate(char* buff, int nlen, char to_user[20], char from_user[20])
 {
 	//建立头部信息，准备发送
@@ -316,9 +323,9 @@ void CSessionSocket::OnUserRegist(HEADER head, char *buf) {
 	m_recordset = new CRecordset(&m_dataBase);
 	m_recordset->Open(AFX_DB_USE_DEFAULT_TYPE, str);
 	long num = m_recordset->GetRecordCount();
-	char Msg;
+	CString strTemp;
 	if (num == 0) {
-		Msg = '1';
+		strTemp = _T("{\"cmd\":1}");
 		CString str = _T("insert into socket.users values ('") + Name + _T("', '") + Password + _T("', '") + Question + _T("', '") + Answer + _T("')");
 		m_dataBase.ExecuteSQL(str);
 		CTime time;
@@ -328,14 +335,18 @@ void CSessionSocket::OnUserRegist(HEADER head, char *buf) {
 		pView->m_listData.AddString(str1);
 	}
 	else {
-		Msg = '0';
+		strTemp = _T("{\"cmd\":0}");
 	}
 	m_recordset->Close();
 	m_dataBase.Close();
 	//建立头部信息，准备发送
+
+	int len = WideCharToMultiByte(CP_ACP, 0, strTemp, -1, NULL, 0, NULL, NULL);
+	char *data = new char[len + 1];
+	WideCharToMultiByte(CP_ACP, 0, strTemp, -1, data, len, NULL, NULL);
 	HEADER _head;
 	_head.type = MSG_REGIST;
-	_head.nContentLen = sizeof(char);
+	_head.nContentLen = len + 1;
 	strcpy(_head.to_user, name);
 	strcpy(_head.from_user, "Server");
 	POSITION ps = pView->m_pSessionList->GetHeadPosition();  //取得，所有用户的队列
@@ -347,7 +358,7 @@ void CSessionSocket::OnUserRegist(HEADER head, char *buf) {
 		if (pTemp->m_strName == _head.to_user)
 		{
 			pTemp->Send(&_head, sizeof(HEADER));  //先发送头部
-			pTemp->Send(&Msg, sizeof(char));	//然后发布内容
+			pTemp->Send(data, len + 1);	//然后发布内容
 		}
 	}
 }
@@ -372,10 +383,16 @@ void CSessionSocket::GetQuestion(HEADER head) {
 	m_recordset = new CRecordset(&m_dataBase);
 	m_recordset->Open(AFX_DB_USE_DEFAULT_TYPE, str);
 	long num = m_recordset->GetRecordCount();
-	CString question;
-	LPCTSTR lpctStr = (LPCTSTR)_T("question");
-	m_recordset->GetFieldValue(lpctStr, question);
-	CString str1 = _T("{\"question\":\"") + question + _T("\"}");
+	CString question("");
+	CString str1;
+	if (num != 0) {
+		LPCTSTR lpctStr = (LPCTSTR)_T("question");
+		m_recordset->GetFieldValue(lpctStr, question);
+		str1 = _T("{\"cmd\":1,\"question\":\"") + question + _T("\"}");
+	}
+	else {
+		str1 = _T("{\"cmd\":0}");
+	}
 	int len = WideCharToMultiByte(CP_ACP, 0, str1, -1, NULL, 0, NULL, NULL);
 	char *data = new char[len + 1];
 	WideCharToMultiByte(CP_ACP, 0, str1, -1, data, len, NULL, NULL);
