@@ -253,13 +253,45 @@ BOOL CSessionSocket::WChar2MByte(LPCWSTR srcBuff, LPSTR destBuff, int nlen)
 }
 
 CString CSessionSocket::Update_ServerLog() {
-	CString strUserInfo = _T("");
-	CServerView* pView = (CServerView*)((CMainFrame*)AfxGetApp()->m_pMainWnd)->GetActiveView();
-	POSITION ps = pView->m_pSessionList->GetHeadPosition();
-	while (ps != NULL) {
-		CSessionSocket *pTemp = (CSessionSocket *)pView->m_pSessionList->GetNext(ps);
-		strUserInfo += pTemp->m_strName + _T("#");	//用'#'来分割
+
+	CDatabase m_dataBase;  //数据库
+						   //连接数据库
+	m_dataBase.Open(NULL,
+		false,
+		false,
+		_T("ODBC;server=127.0.0.1;DSN=My_odbc;UID=root;PWD=tanghuichuan1997")
+	);
+	if (!m_dataBase.IsOpen())
+	{
+		AfxMessageBox(_T("数据库连接失败!"));
+		return _T("");
 	}
+	CRecordset *m_recordset;
+	m_recordset = new CRecordset(&m_dataBase);
+	CString str = _T("SELECT * FROM socket.users");
+	m_recordset->Open(AFX_DB_USE_DEFAULT_TYPE, str);
+	/*long num = m_recordset->GetRecordCount();
+	short cnt = m_recordset->GetODBCFieldCount();*/
+	m_recordset->MoveLast();
+	CString lastname;
+	LPCTSTR lpctStr = (LPCTSTR)_T("name");
+	m_recordset->GetFieldValue(lpctStr, lastname);
+	m_recordset->MoveFirst();
+	CString name("");
+	CString status("");
+	CString strUserInfo("");
+	while (name.Compare(lastname) != 0) {
+		LPCTSTR getName = (LPCTSTR)_T("name");
+		m_recordset->GetFieldValue(getName, name);
+		LPCTSTR getStatus = (LPCTSTR)_T("isOnline");
+		m_recordset->GetFieldValue(getStatus, status);
+		CString json = _T("{\"name\":\"") + name + _T("\",\"status\":\"") + status + _T("\"}");
+		strUserInfo = strUserInfo + json + _T("#");
+		m_recordset->MoveNext();
+	}
+	m_recordset->Close();
+	m_dataBase.Close();
+
 	return strUserInfo;
 }
 
