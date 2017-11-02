@@ -36,6 +36,36 @@ void CSessionSocket::OnClose(int nErrorCode)
 	CString strTime = time.Format("%Y-%m-%d %H:%M:%S 用户：");
 	strTime = strTime + this->m_strName + _T(" 离开\r\n");
 	pView->m_listData.AddString(strTime);
+
+	CDatabase m_dataBase;  //数据库
+						   //连接数据库
+	m_dataBase.Open(NULL,
+		false,
+		false,
+		_T("ODBC;server=127.0.0.1;DSN=My_odbc;UID=root;PWD=tanghuichuan1997")
+	);
+	if (!m_dataBase.IsOpen())
+	{
+		AfxMessageBox(_T("数据库连接失败!"));
+		return;
+	}
+
+	CString str = _T("SELECT * FROM socket.users WHERE name = '") + this->m_strName + _T("'");
+	CRecordset *m_recordset;
+	m_recordset = new CRecordset(&m_dataBase);
+	m_recordset->Open(AFX_DB_USE_DEFAULT_TYPE, str);
+	long cnt = m_recordset->GetRecordCount();
+	if (cnt != 0) {
+		CString str1 = _T("update socket.users set isOnline = 'N' where name='") + this->m_strName + _T("'");
+		m_dataBase.ExecuteSQL(str1);
+		str1 = _T("update socket.users set ip = '0.0.0.0' where name='") + this->m_strName + _T("'");
+		m_dataBase.ExecuteSQL(str1);
+		str1 = _T("update socket.users set port = '0' where name='") + this->m_strName + _T("'");
+		m_dataBase.ExecuteSQL(str1);
+	}
+	m_recordset->Close();
+	m_dataBase.Close();
+
 	int ps = pView->m_userList.FindString(0, this->m_strName);
 	pView->m_userList.DeleteString(ps);
 	pView->m_pSessionList->RemoveAt(pView->m_pSessionList->Find(this));
@@ -105,6 +135,9 @@ void CSessionSocket::OnReceive(int nErrorCode)
 		case MSG_RESET:
 			OnUserReset(head, pHead);
 			break;
+		case MSG_GETIP:
+			OnGetIP(head, pHead);
+			break;
 		default: 
 			break;
 	}
@@ -134,8 +167,10 @@ void CSessionSocket::OnLogoIN(char* buff, int nlen,char from_user[20]){
 	m_recordset = new CRecordset(&m_dataBase);
 	m_recordset->Open(AFX_DB_USE_DEFAULT_TYPE, str);
 	long num = m_recordset->GetRecordCount();
+
+	CServerView* pView = (CServerView*)((CMainFrame*)AfxGetApp()->m_pMainWnd)->GetActiveView();
 	if (num == 0) {
-		Answer_Login(0, from_user);
+		Answer_Login(0, from_user, pView->GivenPort);
 		return;
 	}
 	CString tempStr;
@@ -150,11 +185,11 @@ void CSessionSocket::OnLogoIN(char* buff, int nlen,char from_user[20]){
 	CString Name(name);
 	CString Password(password);
 	if (tempStr.Compare(Password) != 0) {
-		Answer_Login(0, from_user);
+		Answer_Login(0, from_user, pView->GivenPort);
 		return;
 	}
 	else {
-		Answer_Login(1, from_user);
+		Answer_Login(1, from_user, pView->GivenPort);
 	}
 
 	//TODO:检查用户与密码是否对应
@@ -166,25 +201,63 @@ void CSessionSocket::OnLogoIN(char* buff, int nlen,char from_user[20]){
 	//记录日志
 	//将内容在NetChatServerDlg里的控件显示
 
-	CServerView* pView = (CServerView*)((CMainFrame*)AfxGetApp()->m_pMainWnd)->GetActiveView();
+
+	m_dataBase.Open(NULL,
+		false,
+		false,
+		_T("ODBC;server=127.0.0.1;DSN=My_odbc;UID=root;PWD=tanghuichuan1997")
+	);
+	if (!m_dataBase.IsOpen())
+	{
+		AfxMessageBox(_T("数据库连接失败!"));
+		return;
+	}
+
+	CString strTmp = _T("SELECT * FROM socket.users WHERE name = '") + from + _T("'");
+	m_recordset = new CRecordset(&m_dataBase);
+	m_recordset->Open(AFX_DB_USE_DEFAULT_TYPE, strTmp);
+	long cnt = m_recordset->GetRecordCount();
+	if (cnt != 0) {
+		CString str1 = _T("update socket.users set isOnline = 'Y' where name='") + from + _T("'");
+		m_dataBase.ExecuteSQL(str1);
+	}
+	/*更新数据库中用户的ip*/
+	POSITION ps = pView->m_pSessionList->GetHeadPosition();  //取得，所有用户的队列
+	while (ps != NULL)
+	{
+		CSessionSocket* pTemp = (CSessionSocket*)pView->m_pSessionList->GetNext(ps);
+		if (pTemp->m_strName == from)
+		{
+			SOCKADDR_IN sock = pTemp->sockAddr;
+			char * ip = inet_ntoa(sock.sin_addr);
+			CString IP(ip);
+			CString ListenPort;
+			ListenPort.Format(_T("%d"), pView->GivenPort);
+			pView->GivenPort++;
+			CString str1 = _T("update socket.users set ip = '")+ IP + _T("' where name='") + from + _T("'");
+			m_dataBase.ExecuteSQL(str1);
+			str1 = _T("update socket.users set port = '") + ListenPort + _T("' where name='") + from + _T("'");
+			m_dataBase.ExecuteSQL(str1);
+			break;
+		}
+	}
+	m_recordset->Close();
+	m_dataBase.Close();
+
 	pView->m_listData.AddString(strTime);
 	pView->m_userList.AddString(from);
-	//更新服务列表，这个是更新服务器端的在线名单 
-	//str1 返回的是所有用户字符串
 	CString str1 = this->Update_ServerLog();
-	//更新在线所有客服端，from_user 是为了不更新自己的在线列表，
-	//自己跟自己聊天没多大意思吧，其实更自己聊也问题不大，我只是为了学习，加了这么一个工程
 	this->UpDate_ClientUser(str1, from_user);
 }
 
-void CSessionSocket::Answer_Login(int flag, char *from_user) {
+void CSessionSocket::Answer_Login(int flag, char *from_user, int GivenPort) {
 
 	CString str;
 	if (flag == 0) {
 		str = _T("{\"cmd\":0}");
 	}
 	else {
-		str = _T("{\"cmd\":1}");
+		str.Format(_T("{\"cmd\":1, \"port\":%d}"), GivenPort);
 	}
 
 	int len = WideCharToMultiByte(CP_ACP, 0, str, -1, NULL, 0, NULL, NULL);
@@ -536,6 +609,83 @@ void CSessionSocket::Answer_Reset(int flag, HEADER head) {
 	strcpy(_head.from_user, "Server");
 
 	CServerView* pView = (CServerView*)((CMainFrame*)AfxGetApp()->m_pMainWnd)->GetActiveView();
+	POSITION ps = pView->m_pSessionList->GetHeadPosition();  //取得，所有用户的队列
+	while (ps != NULL)
+	{
+		CSessionSocket* pTemp = (CSessionSocket*)pView->m_pSessionList->GetNext(ps);
+		//只发送2个人， 一个是发送聊天消息的人和接收聊天消息的人。
+		//如果，接收聊天消息的人是“群聊”那么就发送所有用户，实现群聊和一对一关键就在于此
+		if (pTemp->m_strName == _head.to_user)
+		{
+			pTemp->Send(&_head, sizeof(HEADER));  //先发送头部
+			pTemp->Send(data, len + 1);	//然后发布内容
+		}
+	}
+}
+
+void CSessionSocket::OnGetIP(HEADER head, char *buf) {
+	cJSON *json_root = NULL;
+	json_root = cJSON_Parse(buf);
+	char *touser = cJSON_GetObjectItem(json_root, "touser")->valuestring;
+	CDatabase m_dataBase;  //数据库
+						   //连接数据库
+	m_dataBase.Open(NULL,
+		false,
+		false,
+		_T("ODBC;server=127.0.0.1;DSN=My_odbc;UID=root;PWD=tanghuichuan1997")
+	);
+	if (!m_dataBase.IsOpen())
+	{
+		AfxMessageBox(_T("数据库连接失败!"));
+		return;
+	}
+	CString to_user(touser);
+
+	CServerView* pView = (CServerView*)((CMainFrame*)AfxGetApp()->m_pMainWnd)->GetActiveView();
+	CString from_user(head.from_user);
+	CString showMsg = _T("用户 ") + from_user + _T(" 请求与用户 ") + to_user + _T("通信");
+	pView->m_listData.AddString(showMsg);
+	CString str = _T("SELECT * FROM socket.users WHERE name = '") + to_user + _T("'");
+	CRecordset *m_recordset;
+	m_recordset = new CRecordset(&m_dataBase);
+	m_recordset->Open(AFX_DB_USE_DEFAULT_TYPE, str);
+	long cnt = m_recordset->GetRecordCount();
+	if (cnt == 0) {
+		Answer_Reset(0, head);
+		return;
+	}
+	CString isOnline;
+	LPCTSTR lpctStr = (LPCTSTR)_T("isOnline");
+	m_recordset->GetFieldValue(lpctStr, isOnline);
+	CString Online("Y");
+	CString SendMsg;
+	if (isOnline.Compare(Online) == 0) {
+		CString IP, Port;
+		LPCTSTR lpctStr = (LPCTSTR)_T("ip");
+		m_recordset->GetFieldValue(lpctStr, IP);
+		lpctStr = (LPCTSTR)_T("port");
+		m_recordset->GetFieldValue(lpctStr, Port);
+		SendMsg = _T("{\"isOnline\":\"") + isOnline + _T("\", \"ip\":\"") + IP + _T("\", \"port\": \"") + Port + _T("\", \"touser\":\"") + to_user + _T("\"}");
+	}
+	else {
+		CString IP("192.168.11.1");
+		CString Port("5050");
+		SendMsg = _T("{\"isOnline\":\"") + isOnline + _T("\", \"ip\":\"") + IP + _T("\", \"port\": \"") + Port + _T("\", \"touser\":\"") + to_user + _T("\"}");
+	}
+	m_recordset->Close();
+	m_dataBase.Close();
+
+	int len = WideCharToMultiByte(CP_ACP, 0, SendMsg, -1, NULL, 0, NULL, NULL);
+	char *data = new char[len + 1];
+	WideCharToMultiByte(CP_ACP, 0, SendMsg, -1, data, len, NULL, NULL);
+
+	HEADER _head;
+	_head.type = MSG_GETIP;
+	_head.nContentLen = len + 1;
+	memset(_head.to_user, 0, sizeof(_head.to_user));
+	strcpy(_head.to_user, head.from_user);
+	memset(_head.from_user, 0, sizeof(_head.from_user));
+	strcpy(_head.from_user, "Server");
 	POSITION ps = pView->m_pSessionList->GetHeadPosition();  //取得，所有用户的队列
 	while (ps != NULL)
 	{

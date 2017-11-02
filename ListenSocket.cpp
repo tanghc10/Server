@@ -40,7 +40,6 @@ void CListenSocket::OnAccept(int nErrorCode)
 
 		//将新得到的会话socket加到会话socket链表的末尾
 		pView->m_pSessionList->AddTail(pNewSocket);
-
 	}
 	else
 		delete pNewSocket;
