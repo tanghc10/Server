@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Head.h"
 // CListenSocket ÃüÁîÄ¿±ê
 
 class CListenSocket : public CAsyncSocket

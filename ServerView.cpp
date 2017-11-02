@@ -33,8 +33,7 @@ END_MESSAGE_MAP()
 CServerView::CServerView()
 	: CFormView(IDD_SERVER_FORM)
 {
-	// TODO: 在此处添加构造代码
-
+	GivenPort = 6000;
 }
 
 CServerView::~CServerView()

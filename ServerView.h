@@ -50,13 +50,13 @@ protected:
 
 // 生成的消息映射函数
 protected:
-	afx_msg void OnFilePrintPreview();
 	afx_msg void OnRButtonUp(UINT nFlags, CPoint point);
 	afx_msg void OnContextMenu(CWnd* pWnd, CPoint point);
 	DECLARE_MESSAGE_MAP()
 public:
 	CListBox m_listData;
 	CListBox m_userList;
+	int GivenPort;
 };
 
 #ifndef _DEBUG  // ServerView.cpp 中的调试版本
