@@ -124,7 +124,7 @@ void CSessionSocket::OnReceive(int nErrorCode)
 			OnLogoIN(pHead, head.nContentLen, head.from_user);
 			break;
 		case MSG_SEND: //发送消息
-			OnMSGTranslate(pHead, head.nContentLen, head.to_user, head.from_user);
+			OnMSGTranslate(pHead, head);
 			break;
 		case MSG_REGIST:
 			OnUserRegist(head, pHead);
@@ -241,6 +241,34 @@ void CSessionSocket::OnLogoIN(char* buff, int nlen,char from_user[20]){
 			break;
 		}
 	}
+
+	/*检查是否有离线消息*/
+	CString findOffline = _T("SELECT * FROM socket.offline_msg WHERE toUser = '") + from + _T("'");
+	m_recordset = new CRecordset(&m_dataBase);
+	m_recordset->Open(AFX_DB_USE_DEFAULT_TYPE, findOffline);
+	long offlineCnt = m_recordset->GetRecordCount();
+	if (offlineCnt != 0) {
+		m_recordset->MoveLast();
+		CString lastMsg;
+		LPCTSTR lpctStr = (LPCTSTR)_T("message");
+		m_recordset->GetFieldValue(lpctStr, lastMsg);
+		m_recordset->MoveFirst();
+		CString message("");
+		CString TolMes("");
+		while (message.Compare(lastMsg) != 0) {
+			m_recordset->GetFieldValue(lpctStr, message);
+			TolMes += message;
+			m_recordset->MoveNext();
+		}
+		SendOfflineMsg(from_user, TolMes);
+		CString safeDelete = _T("SET SQL_SAFE_UPDATES = 0;");
+		m_dataBase.ExecuteSQL(safeDelete);
+		CString str = _T("delete from socket.offline_msg where toUser = '") + from + _T("'");
+		m_dataBase.ExecuteSQL(str);
+		safeDelete = _T("SET SQL_SAFE_UPDATES = 1;");
+		m_dataBase.ExecuteSQL(safeDelete);
+	}
+
 	m_recordset->Close();
 	m_dataBase.Close();
 
@@ -368,30 +396,28 @@ CString CSessionSocket::Update_ServerLog() {
 	return strUserInfo;
 }
 
-void CSessionSocket::OnMSGTranslate(char* buff, int nlen, char to_user[20], char from_user[20])
+void CSessionSocket::OnMSGTranslate(char* buff, HEADER head)
 {
-	//建立头部信息，准备发送
-	HEADER head;
-	head.type = MSG_SEND;
-	head.nContentLen = nlen;
-	strcpy(head.to_user, to_user);
-	strcpy(head.from_user, from_user);
-
-	CServerView* pView = (CServerView*)((CMainFrame*)AfxGetApp()->m_pMainWnd)->GetActiveView();
-	POSITION ps = pView->m_pSessionList->GetHeadPosition();  //取得，所有用户的队列
-	CString str(buff);
-	int i = strcmp(head.to_user, "所有人");
-	while (ps != NULL)
+	CDatabase m_dataBase;  //数据库
+						   //连接数据库
+	m_dataBase.Open(NULL,
+		false,
+		false,
+		_T("ODBC;server=127.0.0.1;DSN=My_odbc;UID=root;PWD=tanghuichuan1997")
+	);
+	if (!m_dataBase.IsOpen())
 	{
-		CSessionSocket* pTemp = (CSessionSocket*)pView->m_pSessionList->GetNext(ps);
-		//只发送2个人， 一个是发送聊天消息的人和接收聊天消息的人。
-		//如果，接收聊天消息的人是“群聊”那么就发送所有用户，实现群聊和一对一关键就在于此
-		if (pTemp->m_strName == head.to_user || pTemp->m_strName == head.from_user || i == 0)
-		{
-			pTemp->Send(&head, sizeof(HEADER));  //先发送头部
-			pTemp->Send(buff, nlen);			//然后发布内容
-		}
+		AfxMessageBox(_T("数据库连接失败!"));
+		return;
 	}
+	CString toUser(head.to_user);
+	CString fromUser(head.from_user);
+	CString Msg(buff);
+	CString str = _T("insert into socket.offline_msg values ('") + toUser + _T("', '") + fromUser + _T("', '") + Msg + _T("')");
+	CServerView* pView = (CServerView*)((CMainFrame*)AfxGetApp()->m_pMainWnd)->GetActiveView();
+	pView->m_listData.AddString(str);
+	m_dataBase.ExecuteSQL(str);
+	m_dataBase.Close();
 }
 
 void CSessionSocket::OnUserRegist(HEADER head, char *buf) {
@@ -695,6 +721,35 @@ void CSessionSocket::OnGetIP(HEADER head, char *buf) {
 		if (pTemp->m_strName == _head.to_user)
 		{
 			pTemp->Send(&_head, sizeof(HEADER));  //先发送头部
+			pTemp->Send(data, len + 1);	//然后发布内容
+		}
+	}
+}
+
+void CSessionSocket::SendOfflineMsg(char *toUser, CString msg) {
+	CString sendStr = _T("{\"offlineMsg\":\"") + msg + _T("\"}");
+	int len = WideCharToMultiByte(CP_ACP, 0, sendStr, -1, NULL, 0, NULL, NULL);
+	char *data = new char[len + 1];
+	WideCharToMultiByte(CP_ACP, 0, sendStr, -1, data, len, NULL, NULL);
+
+	HEADER head;
+	head.type = MSG_OFFLINE;
+	head.nContentLen = len + 1;
+	memset(head.to_user, 0, sizeof(head.to_user));
+	strcpy(head.to_user, toUser);
+	memset(head.from_user, 0, sizeof(head.from_user));
+	strcpy(head.from_user, "Server");
+
+	CServerView* pView = (CServerView*)((CMainFrame*)AfxGetApp()->m_pMainWnd)->GetActiveView();
+	POSITION ps = pView->m_pSessionList->GetHeadPosition();  //取得，所有用户的队列
+	while (ps != NULL)
+	{
+		CSessionSocket* pTemp = (CSessionSocket*)pView->m_pSessionList->GetNext(ps);
+		//只发送2个人， 一个是发送聊天消息的人和接收聊天消息的人。
+		//如果，接收聊天消息的人是“群聊”那么就发送所有用户，实现群聊和一对一关键就在于此
+		if (pTemp->m_strName == head.to_user)
+		{
+			pTemp->Send(&head, sizeof(HEADER));  //先发送头部
 			pTemp->Send(data, len + 1);	//然后发布内容
 		}
 	}
