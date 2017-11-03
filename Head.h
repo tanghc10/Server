@@ -14,6 +14,7 @@ const int MSG_REGIST = 0x05;	//注册用户
 const int MSG_GETQUE = 0x06;	//获取密保问题
 const int MSG_RESET = 0x07;		//重置密码
 const int MSG_GETIP = 0x08;	//获取聊天对象IP
+const int MSG_OFFLINE = 0x09;	//离线消息
 
 #pragma pack(push,1)
 typedef struct tagHeader {
