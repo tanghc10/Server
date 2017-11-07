@@ -43,6 +43,6 @@ void CListenSocket::OnAccept(int nErrorCode)
 	}
 	else
 		delete pNewSocket;
-	CAsyncSocket::OnAccept(nErrorCode);
+	CSocket::OnAccept(nErrorCode);
 
 }

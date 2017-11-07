@@ -6,6 +6,7 @@
 #include "SessionSocket.h"
 #include "ServerView.h"
 #include "MainFrm.h"
+#include "ServerInfo.h"
 #include "afxdb.h"
 #include "cJSON.h"
 #include <stdlib.h>
@@ -29,6 +30,9 @@ CSessionSocket::~CSessionSocket()
 //当客户关闭连接时的事件响应函数
 void CSessionSocket::OnClose(int nErrorCode)
 {
+	if (m_strName.Compare(_T("")) == 0) {
+		return;
+	}
 	//在View里显示信息
 	CServerView* pView = (CServerView*)((CMainFrame*)AfxGetApp()->m_pMainWnd)->GetActiveView();
 	CTime time;
@@ -76,7 +80,7 @@ void CSessionSocket::OnClose(int nErrorCode)
 	this->Close();
 	//销毁该套接字
 	delete this;
-	CAsyncSocket::OnClose(nErrorCode);
+	CSocket::OnClose(nErrorCode);
 }
 
 //接收到数据时的事件响应函数
@@ -106,7 +110,7 @@ void CSessionSocket::OnReceive(int nErrorCode)
 	//根据消息头中的信息接收后续的数据
 	pHead = new char[head.nContentLen];
 	if (!pHead) {
-		TRACE0("CSessionSocket::OnReceive 内存分配失败");
+		TRACE0("CSessionSocket::OnReceive                        分配失败");
 		return;
 	}
 	memset(pHead, 0, head.nContentLen * sizeof(char));
@@ -120,7 +124,7 @@ void CSessionSocket::OnReceive(int nErrorCode)
 	////////////根据消息类型，处理数据,这个也是和客户端进行对应的。。下面的MSG_LOGOIN，MSG_SEND是定义好的常量，可以F12看看////////////////////
 	switch (head.type)
 	{
-		case MSG_LOGOIN: //登陆消息
+		case MSG_LOGIN: //登陆消息
 			OnLogoIN(pHead, head.nContentLen, head.from_user);
 			break;
 		case MSG_SEND: //发送消息
@@ -144,7 +148,7 @@ void CSessionSocket::OnReceive(int nErrorCode)
 
 	delete pHead;
 	pHead = NULL;
-	CAsyncSocket::OnReceive(nErrorCode);
+	CSocket::OnReceive(nErrorCode);
 }
 
 void CSessionSocket::OnLogoIN(char* buff, int nlen,char from_user[20]){
@@ -233,7 +237,7 @@ void CSessionSocket::OnLogoIN(char* buff, int nlen,char from_user[20]){
 			CString IP(ip);
 			CString ListenPort;
 			ListenPort.Format(_T("%d"), pView->GivenPort);
-			pView->GivenPort++;
+			pView->GivenPort += 2;
 			CString str1 = _T("update socket.users set ip = '")+ IP + _T("' where name='") + from + _T("'");
 			m_dataBase.ExecuteSQL(str1);
 			str1 = _T("update socket.users set port = '") + ListenPort + _T("' where name='") + from + _T("'");
@@ -293,7 +297,7 @@ void CSessionSocket::Answer_Login(int flag, char *from_user, int GivenPort) {
 	WideCharToMultiByte(CP_ACP, 0, str, -1, data, len, NULL, NULL);
 
 	HEADER _head;
-	_head.type = MSG_LOGOIN;
+	_head.type = MSG_LOGIN;
 	_head.nContentLen = len + 1;
 	memset(_head.to_user, 0, sizeof(_head.to_user));
 	strcpy(_head.to_user, from_user);
@@ -414,8 +418,6 @@ void CSessionSocket::OnMSGTranslate(char* buff, HEADER head)
 	CString fromUser(head.from_user);
 	CString Msg(buff);
 	CString str = _T("insert into socket.offline_msg values ('") + toUser + _T("', '") + fromUser + _T("', '") + Msg + _T("')");
-	CServerView* pView = (CServerView*)((CMainFrame*)AfxGetApp()->m_pMainWnd)->GetActiveView();
-	pView->m_listData.AddString(str);
 	m_dataBase.ExecuteSQL(str);
 	m_dataBase.Close();
 }
@@ -455,12 +457,12 @@ void CSessionSocket::OnUserRegist(HEADER head, char *buf) {
 	CString strTemp;
 	if (num == 0) {
 		strTemp = _T("{\"cmd\":1}");
-		CString str = _T("insert into socket.users values ('") + Name + _T("', '") + Password + _T("', '") + Question + _T("', '") + Answer + _T("')");
+		CString str = _T("insert into socket.users values ('") + Name + _T("', '") + Password + _T("', '") + Question + _T("', '") + Answer + _T("', 'N', '0.0.0.0', '0')");
 		m_dataBase.ExecuteSQL(str);
 		CTime time;
 		time = CTime::GetCurrentTime();  //获取现在时间
 		CString strTime = time.Format("%Y-%m-%d %H:%M:%S 用户：");
-		CString str1 = strTime + _T("用户 ") + Name + _T(" 注册完成");
+		CString str1 = strTime + Name + _T(" 注册完成");
 		pView->m_listData.AddString(str1);
 	}
 	else {
@@ -671,8 +673,16 @@ void CSessionSocket::OnGetIP(HEADER head, char *buf) {
 	CString from_user(head.from_user);
 	CString showMsg = _T("用户 ") + from_user + _T(" 请求与用户 ") + to_user + _T("通信");
 	pView->m_listData.AddString(showMsg);
-	CString str = _T("SELECT * FROM socket.users WHERE name = '") + to_user + _T("'");
+
+	CString str = _T("SELECT * FROM socket.users WHERE name = '") + from_user + _T("'");
 	CRecordset *m_recordset;
+	m_recordset = new CRecordset(&m_dataBase);
+	m_recordset->Open(AFX_DB_USE_DEFAULT_TYPE, str);
+	CString LocalIP;
+	LPCTSTR getLocal = (LPCTSTR)_T("ip");
+	m_recordset->GetFieldValue(getLocal, LocalIP);
+
+	str = _T("SELECT * FROM socket.users WHERE name = '") + to_user + _T("'");
 	m_recordset = new CRecordset(&m_dataBase);
 	m_recordset->Open(AFX_DB_USE_DEFAULT_TYPE, str);
 	long cnt = m_recordset->GetRecordCount();
@@ -691,12 +701,13 @@ void CSessionSocket::OnGetIP(HEADER head, char *buf) {
 		m_recordset->GetFieldValue(lpctStr, IP);
 		lpctStr = (LPCTSTR)_T("port");
 		m_recordset->GetFieldValue(lpctStr, Port);
-		SendMsg = _T("{\"isOnline\":\"") + isOnline + _T("\", \"ip\":\"") + IP + _T("\", \"port\": \"") + Port + _T("\", \"touser\":\"") + to_user + _T("\"}");
+		SendMsg = _T("{\"isOnline\":\"") + isOnline + _T("\", \"ip\":\"") + IP + _T("\", \"port\": \"") + Port + _T("\", \"touser\":\"") + to_user + _T("\",\"localIP\":\"") + LocalIP + _T("\"}");
 	}
 	else {
-		CString IP("192.168.11.1");
-		CString Port("5050");
-		SendMsg = _T("{\"isOnline\":\"") + isOnline + _T("\", \"ip\":\"") + IP + _T("\", \"port\": \"") + Port + _T("\", \"touser\":\"") + to_user + _T("\"}");
+		CString IP(Server_IP);
+		CString Port;
+		Port.Format(_T("%d"), Server_port);
+		SendMsg = _T("{\"isOnline\":\"") + isOnline + _T("\", \"ip\":\"") + IP + _T("\", \"port\": \"") + Port + _T("\", \"touser\":\"") + to_user + _T("\",\"localIP\":\"") + LocalIP + _T("\"}");
 	}
 	m_recordset->Close();
 	m_dataBase.Close();
