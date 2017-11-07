@@ -68,7 +68,7 @@ void CServerView::OnInitialUpdate()
 		return ;
 	}
 
-	if (m_pListenSocket->Create(Server_port, SOCK_STREAM, FD_ACCEPT) == FALSE)
+	if (m_pListenSocket->Create(Server_port, SOCK_STREAM) == FALSE)
 	{
 		AfxMessageBox(_T("´´½¨Ì×½Ó×ÖÊ§°Ü!"), MB_OK | MB_ICONEXCLAMATION);
 		m_pListenSocket->Close();

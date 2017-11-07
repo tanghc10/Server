@@ -2,7 +2,7 @@
 #include "Head.h"
 // CSessionSocket ÃüÁîÄ¿±ê
 
-class CSessionSocket : public CAsyncSocket
+class CSessionSocket : public CSocket
 {
 public:
 	CSessionSocket();

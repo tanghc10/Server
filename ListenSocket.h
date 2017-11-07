@@ -2,7 +2,7 @@
 
 // CListenSocket ÃüÁîÄ¿±ê
 
-class CListenSocket : public CAsyncSocket
+class CListenSocket : public CSocket
 {
 public:
 	CListenSocket();
